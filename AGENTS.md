@@ -2,9 +2,11 @@
 
 ## Goal and scope
 
-Build a small, reliable GitHub issue snapshot connector for an individual assessment. The developer is learning and must be able to explain the code. Read docs/PROJECT_BRIEF.md and docs/BUILD_PLAN.md before changing the project. User instructions take precedence over this file.
+Build a small, reliable GitHub issue snapshot connector for an individual assessment. The developer is learning and must be able to explain the code. Read [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) and [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) before changing the project. User instructions take precedence over this file.
 
 Use Python, requests, built-in sqlite3 and argparse, and pytest. Keep a flat, importable package at github_issue_connector/ plus a thin root main.py. Prefer functions and standard-library tools over frameworks and unnecessary classes. No UI, pagination, background polling, deployment, ORM, Docker, or required authentication. Do not delegate to sub-agents.
+
+The developer explicitly requested the optional Tkinter viewer on October 7, 2026, overriding the original no-UI scope for that extension. Preserve its read-only behavior and the existing CLI/public contract. The other scope limits still apply.
 
 ## Learning workflow
 

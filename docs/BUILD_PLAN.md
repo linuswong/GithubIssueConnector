@@ -1,106 +1,123 @@
 # Build plan
 
-Milestones 0–3 and milestone 4's local verification/documentation/demo preparation are complete on October 6, 2026. Recording, publication, reviewer access, and email submission remain manual and unverified. Historical milestone entries describe what was true at the end of each milestone.
+Milestones 0–3 and milestone 4's local verification/demo preparation are complete. The optional desktop viewer and styling were added at the developer's request on October 7, 2026. Latest full-suite result: **180 passed, no skips**. Recording and external delivery remain unverified.
 
-## 0. Initialize and understand
+Historical results below describe what was checked at that stage. Detailed tools, corrections, commands, and limitations are in [AI_NOTES.md](AI_NOTES.md).
 
-- [x] Read AGENTS.md, PROJECT_BRIEF.md, BUILD_PLAN.md, and CODING_PROMPT.md; inspect existing work and Git status.
-- [x] Confirm Python 3.13.5 and Git 2.33.0.windows.2; create a fresh project .venv.
-- [x] Install requirements; verify requests 2.34.2 and pytest 9.1.1 imports/startup, then pin those direct dependencies. pip check passed.
-- [x] Existing repository (commit 63eb423); no git init needed. Verify ignore rules for environment, databases, caches, and .env. Nothing staged or committed.
-- [x] Agree on function inputs and success/failure result keys. Documented in Architecture.MD; developer approved with "LGTM" on October 6, 2026.
-- [x] Propose and document issues.db relative to the caller's current working directory, configurable in both functions and CLI; implemented in milestones 2–3.
-- [x] Make one unauthenticated public GET for pallets/flask with state=open, per_page=100, page=1: HTTP 200, 4 entries, 1 issue, 3 PRs. Inspect fields; no database writes.
+## 0. Initialize and understand — October 6
 
-Evidence and limitations: initial sandboxed venv creation failed on ensurepip temporary-directory permissions, including a retry using project-local temporary files. A retry with sandbox restrictions lifted completed setup. Verified isolated interpreter, built-in sqlite3/argparse imports (SQLite 3.49.1), pytest startup, and dependency consistency. Initial sandboxed pytest runs hit cache/collection permission errors; the one generated temporary directory was removed and a rerun outside the sandbox reported no tests ran (exit 5). No connector tests exist yet. No connector implementation, persistence check, or demo import has occurred. See docs/AI_NOTES.md for actual tool use and API observations.
+- [x] Read the instructions and assessment brief; inspect existing files and Git status.
+- [x] Create .venv, install requirements, verify isolation/versions, and check ignore rules.
+- [x] Agree on function inputs, six result keys, count semantics, and current-directory database paths.
+- [x] Make one unauthenticated API exploration without database writes.
 
-Explain: What is the difference between an API response, Python objects, and saved database rows?
+Evidence: Python 3.13.5, Git 2.33.0.windows.2, SQLite 3.49.1, requests 2.34.2, and pytest 9.1.1. pip check passed. The API returned four entries: one issue and three PRs. Setup required approved execution outside sandbox temporary-file restrictions. No connector tests existed yet; the final initial pytest run returned exit 5, no tests.
 
-## 1. GitHub client
+The developer answered the count example and approved the interface with "LGTM."
 
-- [x] Validate repository input, make one request with a finite timeout, check HTTP status, and parse JSON.
-- [x] Filter pull requests and map records to the required fields.
-- [x] Test one page, mixed issue/PR data, empty data, malformed data, and request failure using mocks.
+Review question: How do an API response, Python objects, and saved rows differ?
 
-Evidence: `fetch_issues(repo)` validates/normalizes before creating a Session, requests state=open/per_page=100/page=1 with timeout=20 and redirects disabled, requires HTTP 200, and returns a sorted list or an expected error carrying an agreed code/message. All retained records must validate; pull_request key presence excludes PRs regardless of value. Supporting validation/error modules preserve the approved future public interface and result keys.
+## 1. GitHub client — October 6
 
-Final focused command: `.\.venv\Scripts\python.exe -m pytest tests/test_github_client.py -q -p no:cacheprovider` — 92 passed in 0.45s, exit 0. Full available suite: `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider` — 92 passed in 0.36s, exit 0. HTTPAdapter.send is mocked and guarded in every test; no live API request occurs. Initial fixture failures, their correction, and the optional cache-plugin restriction are recorded in docs/AI_NOTES.md.
+- [x] Validate/normalize owner/name before creating a session.
+- [x] Request one page with a finite timeout and check status/JSON.
+- [x] Exclude PRs and validate the entire retained page.
+- [x] Cover mixed/empty/malformed pages, invalid inputs, and request failures with HTTP mocks.
 
-Limits: no SQLite storage, public import/read operation, CLI, persistence check, fresh setup rerun, or real import/demo was added in this milestone. The fresh environment and live exploration remain milestone 0 evidence; a real connector demo and full setup verification remain milestone 4 work. The comprehension question is offered for developer review, not recorded as answered.
+Evidence: focused suite **92 passed in 0.45s**; full available suite **92 passed in 0.36s**, exit 0. Tests intercept HTTPAdapter.send and forbid unconfigured HTTP. Redirect fixtures were corrected to include PreparedRequest metadata; no SQLite or CLI existed at this stage.
 
-Explain: Why can a page contain fewer saved issues than the requested page size?
+Review question: Why can one API page yield fewer saved issues than its requested page size?
 
-## 2. SQLite storage
+## 2. SQLite storage — October 6
 
-- [x] Create the table with the composite key; implement transactional upsert and deterministic read.
-- [x] Explicitly close connections; test persistence across new connections.
-- [x] Test title updates, duplicates, repository isolation, configurable file paths, and rollback.
+- [x] Implement a composite primary key, transactional upsert, and deterministic local read.
+- [x] Close connections explicitly and prove persistence through new connections.
+- [x] Verify updates, uniqueness, repository isolation, configured paths, retained omissions, and rollback.
 
-Evidence: database.py exposes internal upsert_issues and read_saved_issues functions, preserving the future approved public signatures and result keys. Required columns use NOT NULL and PRIMARY KEY (repository, issue_number). Bound SQL inserts/updates title and URL; missing rows are retained. One explicit BEGIN includes schema creation and the batch, with commit/rollback via the connection context and close in finally. Storage has no HTTP/client dependency; repository normalization precedes SQLite access.
+Evidence: focused suite **33 passed in 0.65s**; full available suite **125 passed in 0.76s**, exit 0. A real late-failure trigger observes earlier writes before raising ABORT; independent connections then see the original data. Tests cover read-only access, missing-file/table empty reads, missing parents without fallback, corrupt schemas, bound values, and connection cleanup. Sandbox temporary-directory failures required approved outside-sandbox runs.
 
-Path evidence: default issues.db follows current working directory; str/Path, absolute/relative paths, separate files, and a filename containing #/Unicode are tested. Missing-file and missing-table reads return [] without creation; missing parents fail without creating directories or selecting a fallback. Existing databases are read with mode=ro. Corrupt/incompatible databases produce database_error; unexpected programming errors propagate.
+Review question: Why does issue number alone fail as the key, and why is deletion based on one page unsafe?
 
-Final focused command: `.\.venv\Scripts\python.exe -m pytest tests/test_database.py -q -p no:cacheprovider --basetemp .venv/pytest-m2-focused-7c889d20 --tb=short` — 33 passed in 0.65s, exit 0. Full available suite: `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .venv/pytest-m2-full-849a931f --tb=short` — 125 passed in 0.76s, exit 0 (92 client + 33 storage). Actual calls supplied absolute paths to these basetemp directories. Both ran with sandbox restrictions lifted after temporary-directory PermissionErrors; the earlier blocked attempts are recorded in docs/AI_NOTES.md.
+## 3. Reusable connector and CLI — October 6
 
-Rollback evidence: a real SQLite trigger observes the updated title/URL of issue 7 and new issue 8 inside the transaction before RAISE(ABORT) rejects issue 99. The resulting IntegrityError becomes database_error. Independent connections then see the original issue 7, no issues 8/99, and the other repository unchanged. Other cases cover initial writes, repeat writes, persistence, empty/omitted rows, literal SQL-like values, offline reads, and closed connections on success/empty read/failure.
+- [x] Export import_issues and read_issues with consistent success/failure results.
+- [x] Add argparse import/read commands, --db, JSON streams, and exit codes.
+- [x] Prove local read makes no HTTP call and failed imports preserve saved rows.
+- [x] Distinguish per-page import count from total saved read count.
 
-Limits: no orchestration, public import/read envelope, CLI, fresh environment re-verification, or real connector import/demo was added. The GitHub client and shared validation/error definitions were preserved. The developer's comprehension response and review are pending; no learning outcome is claimed.
+Evidence: focused connector/CLI suite **32 passed in 1.03s**; full suite **157 passed in 1.55s**, exit 0. Real temporary databases and separately guarded CLI processes verify persistence, paths, counts, streams, and errors. Initial help assertions were corrected for argparse line wrapping. No live connector import occurred in this milestone.
 
-Explain: Why does issue number alone fail as a primary key? Why is deletion based on an incomplete page unsafe?
+Review question: Why should application logic live in reusable functions rather than the CLI?
 
-## 3. Reusable connector and CLI
+## 4. Verification and demo preparation — October 6
 
-- [x] Implement import_issues and read_issues with consistent results.
-- [x] Add argparse import/read commands and --db; print parseable JSON and useful exit codes.
-- [x] Prove read cannot make a network call and a failed import preserves existing rows.
-- [x] Distinguish per-import count from total stored count in behavior and documentation.
+- [x] Create separate .venv/verification-m4 and install only documented requirements.
+- [x] Check package locations with PYTHONPATH unset, pip consistency, help, and the full suite.
+- [x] Run real imports and independent CLI reads against fresh disposable databases.
+- [x] Inspect composite key positions, duplicate groups, and SQLite integrity.
+- [x] Check JSON operation errors, argparse errors, and failed-import file preservation.
+- [x] Review source/tests/docs and prepare executable demo commands and narration.
 
-Evidence: connector.py coordinates the unchanged validator/client/storage interfaces and catches only ConnectorError. Both public functions are exported from the package and use the shared issues.db default. Import validates input and fetches the whole validated/sorted page before transactional upsert; read validates input and calls SQLite storage only. Both return the approved six-key result. Invalid input has repository=null; valid input uses lowercase repository even on failure. Failed results expose no partial issue list, and unexpected programming bugs propagate.
+Evidence: the clean environment had include-system-site-packages=false and initially only pip. Setup and all help commands succeeded. Full tests passed **157 in 1.37s**, then **157 in 1.45s** after doc/docstring edits. Four real imports across live verification and command rehearsal returned Flask issue #6146; independent reads matched. Duplicate groups were empty, key positions were repository=1 and issue_number=2, and integrity_check returned ok.
 
-CLI evidence: main.py parses import/read, owner/repo, and --db, calls the corresponding reusable function, prints JSON on stdout with exit 0 for success or stderr with exit 1 for expected failure. Syntax errors retain argparse usage/error text on stderr and exit 2 before an operation; --help prints text and exits 0. Help documents operations, paths/defaults, and exit behavior. README and Architecture.MD describe the implemented contract and synthetic verified examples.
+The authored demo command blocks ran in **2.116 seconds without narration**. That does not establish recording length. The revised diagram narration targets 1:45 and has not been timed in a recording.
 
-Final focused command: `.\.venv\Scripts\python.exe -m pytest tests/test_connector.py tests/test_cli.py -q -p no:cacheprovider --basetemp .venv/pytest-m3-focused-e9281c6d --tb=short` — 32 passed in 1.03s, exit 0. Full suite: `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .venv/pytest-m3-full-4be28d19 --tb=short` — 157 passed in 1.55s, exit 0 (92 client + 33 storage + 32 integration). Actual calls supplied absolute fresh temporary paths under ignored .venv and used sandbox restrictions lifted, based on prior verified temporary-file restrictions. Initial help-test assertion failures and their correction are recorded in docs/AI_NOTES.md. Direct main.py --help and read --help also ran with exit 0.
+Review question: Why do equal counts after repeated imports fail to prove uniqueness?
 
-Integration evidence: mocked HTTP plus real tmp_path SQLite files verify import/read, PR exclusion/order, updates without duplicates, retained omissions, page count=1 versus stored count=2, API/timeout failures and a malformed page preserving existing data, invalid input before Session/SQLite creation, both configured str/Path files, shared default/empty import/missing read, useful database errors without fallback, and unexpected-error propagation. Read tests make Session/HTTP raise if touched. Separate CLI processes use controlled committed rows, check both --db and current-directory default, repository isolation/order, JSON/exit codes, and child-local HTTP guards. Storage is not mocked for persistence checks; existing milestone 2 rollback tests pass in the full suite.
+## Local Git review
 
-Limits: no dependency installation, new virtual environment, live GitHub request, real connector demo, commit, publication, or submission occurred. Milestone 4 remains unstarted. The developer's comprehension answer is pending, not recorded as a learning outcome.
+The requested initial local commit was created as **cd75207**, "Add GitHub issue snapshot connector with SQLite persistence." All 23 initial submission candidates were reviewed; the offline suite passed **157 tests in 1.54s** before staging. Ignore checks excluded generated files, and staged whitespace checks passed. No push was performed during that review.
 
-Explain: Why does application logic belong in reusable functions rather than the CLI?
+Review question: Why does git diff alone miss never-tracked files?
 
-## 4. Final verification and submission preparation
+## Follow-ups — October 7
 
-- [x] Create a separate clean environment; install only documented dependencies; verify versions, import paths, all help commands, and the full test suite without PYTHONPATH/global-package dependencies.
-- [x] Perform two real public imports into a new disposable file and read after each in separate CLI processes.
-- [x] Query SQLite for duplicate composite-key groups, inspect the primary key, and check integrity; equal counts alone are not the evidence.
-- [x] Verify an expected operation error's JSON/stderr/exit 1 and saved-data preservation; separately verify argparse text/stderr/exit 2.
-- [x] Review README and concise architecture against implementation/evidence; add actual live output and remove stale starter descriptions.
-- [x] Record actual AI/tool use, commands/results, and verification limitations.
-- [x] Review tracked and non-ignored submission candidates for source/tests/dependencies/docs and unwanted artifacts; preserve prior work.
-- [x] Prepare and execute readable live-demo commands; provide a narration schedule targeting 1:45 in docs/DEMO.md.
-- [ ] Rehearse narration with a stopwatch and record a demo under two minutes.
-- [x] Review tracked and untracked submission contents, stage the intended files, and inspect the staged diff for the requested local commit (see final Git review below).
-- [ ] Publish the reviewed source and verify repository access. No push or access check has occurred.
-- [ ] Upload the recording to Google Drive and verify reviewer access/playback.
-- [ ] Reply only to the sender in the original email thread before the deadline.
+| Work | Completed behavior and evidence |
+| --- | --- |
+| Interpreter troubleshooting | Global Python lacked requests; .venv imported it. Direct CLI import/read succeeded, pip check passed, and the suite passed 157 in 1.40s. |
+| Shell activation guidance | Agent PowerShell and Command Prompt processes selected .venv and ran help successfully. The developer's terminal activation was not observed. |
+| API page-size explanation | Parsed the developer's count=100 result and checked per_page=100 in source/docs. Website row count remained the developer's observation. |
+| Manual errors | All ten checklist commands produced expected failures: nine offline and one live HTTP 404. Database SHA-256 stayed unchanged; full suite passed 157 in 1.46s. |
+| Diagram narration | Compared sysDes.mmd to implementation and revised the 1:45 schedule; narration remains unrecorded. |
 
-Evidence: a newly created .venv/verification-m4 initially contained only pip and had include-system-site-packages=false. Installing requirements.txt gave requests 2.34.2 and pytest 9.1.1; Python 3.13.5, SQLite 3.49.1, and pip 25.1.1 were observed. pip check passed. Public package/module imports resolved from the project root with PYTHONPATH unset. All three help commands worked. The documented full command using that interpreter passed 157 tests in 1.37s, exit 0. Approved execution outside sandbox restrictions was used for setup/tests/live networking based on earlier permission failures; no test contacted GitHub.
+See [ERROR_CASES.md](ERROR_CASES.md) and [DEMO.md](DEMO.md).
 
-Live evidence: import pallets/flask --db ./milestone4-live.db, separate read, repeated import, and another separate read all returned success JSON on stdout, empty stderr, exit 0, count=1, and issue #6146. SQLite duplicate-group queries returned [] after each import; PRAGMA table_info showed repository as key position 1 and issue_number as position 2; integrity_check returned ok. Invalid owner/repo/extra returned JSON only on stderr with invalid_repository and exit 1, leaving the database bytes unchanged. read pallets/flask --db returned usage/error text only on stderr and exit 2. Commands, exact output, versions, and limitations are recorded in docs/AI_NOTES.md.
+Review question: Why do syntax errors exit 2 with usage text while operation failures exit 1 with JSON?
 
-Final delivery check: after documentation/docstring edits, the same full-suite command passed 157 tests in 1.45s, exit 0. The exact demo PowerShell blocks ran successfully with a different fresh disposable filename, showing actual live import/read output, duplicate_groups: [], and the expected JSON/exit 1. Command execution took 2.116 seconds without narration; this does not verify recorded-demo duration.
+## Optional desktop viewer — October 7
 
-Limits: no functional defect was found, no feature/test was added, and only stale source docstrings/dependency commentary changed outside documentation. Other Python versions and proxy-dependent networks were not verified. Git initially tracked only README.md; source/tests/docs were untracked and remain unstaged. Live databases and the clean environment are ignored and must stay out of the eventual commit. Narration/video timing, reviewer access, publication, and submission are not verified.
+The developer explicitly requested a GUI, overriding the original no-UI scope for this extension.
 
-Demo schedule: intro 10 s; live import 25 s; separate read 15 s; repeat import/read plus SQL uniqueness 30 s; error 15 s; composite-key decision 10 s = 1:45. See docs/DEMO.md for the exact commands and manual checklist. Counts may change with GitHub data; uniqueness is checked by grouping on the key.
+- [x] Add a thin launcher, database dropdown/Browse, repository counts, and ordered issue display.
+- [x] Add local search, full details, Copy URL, and explicit browser opening.
+- [x] Reuse read-only storage and report errors without creating files.
+- [x] Check real Tk events, temporary databases, switching/refresh, offline behavior, file preservation, and layout.
+- [x] Inspect the Windows viewer and correct clipped bottom controls.
+- [x] Apply the requested GitHub-inspired dark theme and tighten minimum-size spacing.
 
-Explain: Why do unchanged counts after a repeated import fail to prove that the database contains no duplicate issue identities?
+Evidence: no new dependency was installed; existing Tk 8.6/Tcl 8.6.15 worked. Repeated Tk initialization was corrected to one module-level interpreter and separate test windows. Focused storage/GUI tests passed **56 in 1.88s**; full suite passed **180 in 2.82s**, no skips. Styling checks passed **14 in 1.56s**, then the full suite **180 in 2.77s**. Geometry tests require a full visible issue row at 900×640 and 1180×780.
 
-## Final Git review
+Limits: stored snapshots only, synchronous reads, no viewer imports/polling. File-picker/browser boundaries are mocked; their native actions and other operating systems are not manually verified. The final compact layout passed tests; a final preview launch was not inspected after the user's Escape stop.
 
-The developer separately requested staging and a descriptive local commit, with no push. All 23 submission candidates were read, including previously untracked contents: the six package modules, root CLI, five test files, requirements.txt, README.md, Architecture.MD, .gitignore, and seven project instruction/planning/demo documents. No unrelated candidate was found. Existing source, tests, dependency pins, and ignore rules were preserved.
+Review question: Why can the repository's saved row count differ from its latest import count?
 
-Evidence: the verified milestone 4 interpreter ran `python -m pytest -q -p no:cacheprovider` again: **157 passed in 1.54s, exit 0**. All 12 Python candidates parsed. A scan of all candidate contents found no matching common credential patterns or trailing whitespace. `git check-ignore -v` confirmed environment, bytecode, cache, SQLite/sidecar, and .env exclusions. Explicit file paths were staged and `git diff --cached --check`, staged source/test diffs, and the 23-file staged manifest were inspected. Documentation now distinguishes this review from milestone 4's earlier unstaged state.
+## Documentation cleanup and commit review — October 7
 
-Git configuration: current branch main tracks origin/main; origin fetch and push URLs are https://github.com/linuswong/GithubIssueConnector.git. The publishing command from this project is `git push origin main:main`. Publication, remote access, recording, and email submission remain unverified. The local commit is the final operation after reviewing these documentation updates; its identity is reported in the delivery response.
+- [x] Review every project Markdown file and pending source/test/diagram changes.
+- [x] Consolidate repeated evidence, fix stale staged-state claims, and align docs with the viewer.
+- [x] Run the full offline suite: **180 passed in 2.64s, exit 0**, no skips.
+- [x] Check all ten Markdown files, 44 local links/anchors, code fences, whitespace, and all 15 Python files' syntax.
+- [x] Review the 16-file staged manifest/diffs and pass git diff --cached --check.
 
-Explain: Why does `git diff` alone miss files that have never been tracked?
+The first sandbox run failed on pytest temporary-file permissions; the approved retry used a fresh ignored basetemp and passed. pip check and CLI/viewer help also succeeded. The requested local commit includes the cleaned docs and existing viewer/storage/test/diagram changes; its identity is recorded in Git history and the delivery response. Existing fresh-setup/live-import evidence was retained; no new environment, installation, live request, or GUI inspection was performed in this cleanup.
+
+Review question: How would you show that the documentation's import/read count descriptions match the code?
+
+## Remaining delivery work
+
+- [ ] Rehearse narration, record the real demo, and verify the finished video is under two minutes.
+- [ ] Publish the reviewed source and verify repository access.
+- [ ] Upload the video to Google Drive and verify reviewer access and playback.
+- [ ] Reply only to the sender in the original email thread with repository/demo links by October 7, 2026, 11:59 p.m. Pacific.
+
+Recording, publication, access changes, and submission are not implied by a local commit.

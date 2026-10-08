@@ -7,7 +7,7 @@ import pytest
 import requests
 
 from github_issue_connector import database
-from github_issue_connector.database import read_saved_issues, upsert_issues
+from github_issue_connector.database import read_repository_counts, read_saved_issues, upsert_issues
 from github_issue_connector.errors import ConnectorError
 
 
@@ -38,6 +38,73 @@ def query_file(path, sql, parameters=()):
         return connection.execute(sql, parameters).fetchall()
     finally:
         connection.close()
+
+
+def test_repository_counts_are_sorted_isolated_and_do_not_change_file(tmp_path):
+    path = tmp_path / "snapshot # café.sqlite3"
+    upsert_issues([
+        issue(7, "owner/zebra"), issue(8, "owner/zebra"), issue(7, "owner/alpha")
+    ], path)
+    before = path.read_bytes()
+
+    assert read_repository_counts(path) == [
+        {"repository": "owner/alpha", "count": 1},
+        {"repository": "owner/zebra", "count": 2},
+    ]
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("kind", ["missing", "empty", "tableless"])
+def test_repository_counts_handle_empty_databases_without_creating_schema(tmp_path, kind):
+    path = tmp_path / "snapshot.db"
+    if kind == "empty":
+        upsert_issues([], path)
+    elif kind == "tableless":
+        query_file(path, "CREATE TABLE unrelated (value TEXT)")
+    before = path.read_bytes() if path.exists() else None
+
+    assert read_repository_counts(path) == []
+
+    assert (path.read_bytes() if path.exists() else None) == before
+
+
+@pytest.mark.parametrize("kind", ["corrupt", "view", "missing_column", "missing_parent"])
+def test_repository_counts_report_database_failures(tmp_path, kind):
+    path = tmp_path / "snapshot.db"
+    if kind == "corrupt":
+        path.write_bytes(b"not sqlite")
+    elif kind == "view":
+        query_file(path, "CREATE VIEW issues AS SELECT 'owner/repo' AS repository")
+    elif kind == "missing_column":
+        query_file(path, "CREATE TABLE issues (other TEXT)")
+    else:
+        path = tmp_path / "absent" / "snapshot.db"
+
+    with pytest.raises(ConnectorError) as error:
+        read_repository_counts(path)
+
+    assert error.value.code == "database_error"
+    assert not (tmp_path / "absent").exists()
+
+
+def test_repository_count_connection_is_read_only_and_closed(tmp_path, monkeypatch):
+    path = tmp_path / "snapshot.db"
+    upsert_issues([issue()], path)
+    real_connect = sqlite3.connect
+    connections = []
+
+    def inspect_connect(*args, **kwargs):
+        connection = real_connect(*args, **kwargs)
+        connections.append(connection)
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            connection.execute("DELETE FROM issues")
+        return connection
+
+    monkeypatch.setattr(database.sqlite3, "connect", inspect_connect)
+    assert read_repository_counts(path) == [{"repository": "owner/repo", "count": 1}]
+    assert len(connections) == 1
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        connections[0].execute("SELECT 1")
 
 
 @pytest.mark.parametrize("path_type", [str, Path])

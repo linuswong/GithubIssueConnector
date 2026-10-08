@@ -62,6 +62,26 @@ def upsert_issues(issues: list[dict], db_path: str | Path = DEFAULT_DB_PATH) -> 
 def read_saved_issues(repo: str, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict]:
     """Return one repository's saved rows in order without creating a file/table."""
     repository = normalize_repository(repo)
+    return _read_saved_rows(
+        "SELECT repository, issue_number, title, url FROM issues "
+        "WHERE repository = ? ORDER BY issue_number",
+        (repository,),
+        db_path,
+    )
+
+
+def read_repository_counts(db_path: str | Path = DEFAULT_DB_PATH) -> list[dict]:
+    """List repositories with all saved row counts, alphabetically and offline."""
+    return _read_saved_rows(
+        "SELECT repository, COUNT(*) AS count FROM issues "
+        "GROUP BY repository ORDER BY repository",
+        (),
+        db_path,
+    )
+
+
+def _read_saved_rows(query: str, parameters: tuple, db_path: str | Path) -> list[dict]:
+    """Share read-only connection/schema/error handling for the two local queries."""
     path = Path(db_path).absolute()
     try:
         try:
@@ -83,11 +103,7 @@ def read_saved_issues(repo: str, db_path: str | Path = DEFAULT_DB_PATH) -> list[
                 return []
             if schema["type"] != "table":
                 raise sqlite3.DatabaseError("The issues schema entry must be a table.")
-            rows = connection.execute(
-                "SELECT repository, issue_number, title, url FROM issues "
-                "WHERE repository = ? ORDER BY issue_number",
-                (repository,),
-            ).fetchall()
+            rows = connection.execute(query, parameters).fetchall()
             return [dict(row) for row in rows]
         finally:
             connection.close()

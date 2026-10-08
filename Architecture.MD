@@ -1,40 +1,67 @@
 # Architecture
 
-The connector is implemented and verified on Python 3.13.5 with requests 2.34.2, pytest 9.1.1, and SQLite 3.49.1. Final automated and live evidence is in [docs/AI_NOTES.md](docs/AI_NOTES.md#milestone-4--october-6-2026).
+A flat Python package provides the connector logic. Thin CLI and optional Tkinter launchers call it. [Verification evidence](docs/AI_NOTES.md) is separate from this implementation reference.
 
-## Interface and contract
+## Interfaces and results
 
 ```python
 from github_issue_connector import import_issues, read_issues
 
-import_issues(repo: str, db_path: str | Path = "issues.db") -> dict
-read_issues(repo: str, db_path: str | Path = "issues.db") -> dict
+imported = import_issues("owner/repo", db_path="issues.db")
+saved = read_issues("owner/repo", db_path="issues.db")
 ```
 
-The functions are also exported from github_issue_connector.connector. The CLI is `python main.py import owner/repo --db PATH` or `python main.py read owner/repo --db PATH`.
+Both functions accept string or pathlib.Path paths and return a dictionary with success, operation, repository, count, issues, and error. Issue records contain repository, issue_number, title, and url.
 
-Both operations return success, operation, repository, count, issues, and error. Each issue contains repository, issue_number, title, and url. Success has error=null; an expected failure has count=0, issues=[], and error with code/message. repository is lowercase for valid input, null for invalid input. Import count includes every processed issue in this page, including updates; read count includes all saved rows for that repository. Both issue lists sort by issue_number. Check success when count is zero. README contains actual live JSON examples.
+Success has error=null. Expected failure has count=0, issues=[], and error with code/message. Repository is lowercase for valid input and null for invalid input. Import count covers this page after PR filtering, including updates; read count covers all saved rows. Both issue lists sort by issue_number.
 
-## Components and flow
+The CLI is `python main.py import|read owner/repo [--db PATH]`. The optional desktop launcher is `python viewer.py [--db PATH]`. [README.md](README.md) provides runnable commands and JSON examples.
+
+## Components
+
+Paths below are relative to the repository root.
 
 | File | Responsibility |
 | --- | --- |
-| main.py | argparse input, one public function call, JSON output, exit code |
-| github_issue_connector/__init__.py | Public function exports |
-| connector.py | Coordinate validation/client/storage; build consistent results |
-| validation.py | Validate owner/name and normalize casing |
-| github_client.py | One HTTP request; status/JSON/field validation; PR exclusion |
-| database.py | Schema, transactional upsert, ordered SQLite read, explicit close |
-| errors.py | ConnectorError with expected code/message |
-| tests/ | Guarded HTTP mocks, real temporary SQLite files, CLI processes |
+| main.py | Parse arguments, call one public function, print JSON, set exit code |
+| viewer.py | Parse the initial database path and start the desktop window |
+| github_issue_connector/__init__.py | Export the two public functions |
+| github_issue_connector/connector.py | Coordinate validation, client, storage, and result construction |
+| github_issue_connector/validation.py | Validate owner/name and normalize casing |
+| github_issue_connector/github_client.py | Fetch one page, validate records, exclude PRs |
+| github_issue_connector/database.py | Schema, transactional upsert, read-only queries, explicit connection close |
+| github_issue_connector/errors.py | Expected ConnectorError code/message |
+| github_issue_connector/viewer.py | Database picker, repository/issue tables, search, details, and link actions |
+| tests/ | Guarded HTTP mocks, real SQLite files, CLI processes, and Tk events |
 
-Import: validate repository → fetch and validate the whole page → save its records in one transaction → return page records/count. Input, HTTP, or malformed-page failures cause no database work; database failures roll back writes and return no partial issue list.
+## Data flow
 
-Read: validate repository → query SQLite for that repository → return all saved records/count. It never calls the client or creates an HTTP Session. Importing the package loads its modules, but loading them does not perform HTTP. The CLI contains no SQL or fetching logic.
+**Import:** validate repository → fetch and validate the entire page → upsert records in one transaction → return page records/count. Input, HTTP, and malformed-page failures cause no database work. Database failure rolls back the batch.
 
-Validation permits ASCII letters, digits, dots, underscores, and hyphens in both components; rejects URLs, whitespace, extra slashes, backslashes, empty components, and exact . / .. components before HTTP/SQLite. Valid-looking nonexistent names reach the API. No guessed name-length restriction is imposed.
+**Read:** validate repository → query SQLite → return all saved rows for that repository. It never calls the GitHub client or creates an HTTP session. Loading package modules performs no HTTP.
 
-The client requests state=open, per_page=100, page=1 with Accept application/vnd.github+json and X-GitHub-Api-Version 2026-03-10. It requires HTTP 200 and a JSON list of objects. Objects containing pull_request are excluded by key presence. Retained entries require a positive integer number (not bool), nonblank string title, and structural absolute HTTP(S) html_url with hostname, valid port, and no whitespace. Mapping uses number → issue_number and html_url → url, preserving titles/URLs. One malformed retained entry rejects the whole page. Links are not checked for existence.
+**Viewer:** discover or browse for a database → read_repository_counts → select a repository → read_saved_issues → filter loaded rows locally. Shared read-only storage handling closes each connection explicitly. Refresh reloads saved data; changing databases clears old search/details. One class holds window state and callbacks; connector/storage operations remain functions.
+
+The CLI diagram is [sysDes.mmd](sysDes.mmd). Its narration is in [DEMO.md](docs/DEMO.md#explaining-sysdesmmd); early repository validation, configurable paths, and argparse errors are described here.
+
+## GitHub boundary
+
+Validation accepts ASCII letters, digits, dots, underscores, and hyphens in each repository component. It rejects URLs, whitespace, extra slashes, backslashes, empty components, and exact . or .. components before HTTP/SQLite. A valid-looking nonexistent name reaches GitHub; no guessed name-length restrictions are imposed.
+
+One context-managed Requests Session sends a GET to /repos/{owner}/{name}/issues with:
+
+| Setting | Value |
+| --- | --- |
+| Query | state=open, per_page=100, page=1 |
+| Accept | application/vnd.github+json |
+| X-GitHub-Api-Version | 2026-03-10 |
+| Timeout | 20 seconds for connection/read waits |
+| Redirects | Disabled |
+| Environment credentials/proxies | Disabled with trust_env=False |
+
+HTTP 200 and a JSON list of objects are required. Objects containing the pull_request key are excluded regardless of its value. Retained records require a positive integer number excluding bool, a nonblank string title, and an absolute HTTP(S) html_url with hostname, valid port, and no whitespace.
+
+Mapping uses number → issue_number and html_url → url. Titles/URLs are preserved and rows sorted. A malformed retained entry rejects the whole page; URL validation does not establish link existence. No retries or pagination requests are made.
 
 ## Schema and transactions
 
@@ -48,29 +75,38 @@ CREATE TABLE IF NOT EXISTS issues (
 );
 ```
 
-Issue numbers are local to a repository. INSERT ... ON CONFLICT (repository, issue_number) DO UPDATE replaces title/url; omitted rows are retained. API validation precedes storage, which accepts validated four-field records and prepares normalized row parameters before opening SQLite. Writes and repository lookups use bound parameters.
+Issue numbers are local to a repository. INSERT ... ON CONFLICT (repository, issue_number) DO UPDATE replaces title and URL. Omitted rows are retained. All user values use bound parameters.
 
-Each batch opens SQLite with isolation_level=None, executes explicit BEGIN before table creation/writes, commits on success or rolls back through the connection context on failure, then explicitly closes in finally. Reads also explicitly close. A failed first import may leave an empty database file; atomicity covers schema/rows. A real late-failure trigger test verifies rollback of earlier inserts and updates, followed by inspection through new connections.
+Storage receives validated four-field records and prepares normalized parameters before opening SQLite. Writes use isolation_level=None and explicit BEGIN before schema creation and the batch. The connection context commits or rolls back; finally closes it. Failed first writes may leave an empty file, while schema and row changes remain atomic.
 
-## Configuration and errors
+Reads use an escaped file URI with mode=ro, bound repository selection, deterministic ordering, and explicit close. The viewer's grouped count query sorts repositories alphabetically. A real late-failure trigger test verifies earlier inserts/updates are rolled back, then inspects persisted rows through new connections.
 
-Both public functions and --db use database.DEFAULT_DB_PATH="issues.db", relative to the process's current working directory. Absolute paths select a fixed file. No parent creation or fallback occurs. Import creates the file/table after page validation, even for an empty page. Read of a missing file in an existing parent or a database without an issues table returns an empty success without creation. Existing files use an escaped file URI with mode=ro. Missing parents, corrupt/unusable databases, and incompatible schemas produce database_error; a view named issues is incompatible.
+## Paths and errors
 
-| Expected code | Cause |
+Both functions and CLI commands default to issues.db relative to the **process's current working directory**. Absolute paths select a fixed file. Parent directories must exist; no parent creation or fallback occurs.
+
+Import creates the database/table only after page validation, including an empty page. Read of a missing file in an existing parent, or a database without an issues table, returns an empty success without creation. Missing parents, unusable/corrupt files, and incompatible queried schemas return database_error; a view named issues is incompatible.
+
+The viewer discovers .db/.sqlite/.sqlite3 files directly in the working directory, preferring issues.db then the first alphabetically sorted file. --db overrides selection; Browse can choose another folder. Missing selected files are reported instead of created.
+
+| Expected error code | Cause |
 | --- | --- |
-| invalid_repository | Repository type/syntax |
+| invalid_repository | Repository type or syntax |
 | request_timeout | Requests Timeout |
 | network_error | Other Requests request failures |
-| http_error | Any status other than 200 |
-| invalid_response | JSON/page/required-field validation |
-| database_error | SQLite database or filesystem failure |
+| http_error | HTTP status other than 200 |
+| invalid_response | Invalid JSON, page shape, or required fields |
+| database_error | SQLite or filesystem failure |
 
-Public functions catch only ConnectorError. Storage deliberately re-raises sqlite3.ProgrammingError; unexpected programming bugs retain tracebacks. API messages omit response bodies/underlying network details; database messages identify action/path/reason and useful checks.
+Public functions catch only ConnectorError. Storage re-raises sqlite3.ProgrammingError; other programming errors retain tracebacks. API errors omit response bodies and underlying network details. Database errors identify the action, path, reason, and useful checks.
 
-CLI success is JSON on stdout, exit 0. Expected operation failure is JSON on stderr, exit 1. argparse syntax errors are usage/error text on stderr, exit 2, before calling an operation; help is text on stdout, exit 0. Syntax errors are outside the operation JSON contract.
+CLI success prints JSON on stdout and exits 0; expected operation failure prints JSON on stderr and exits 1. Argument errors use argparse usage text on stderr and exit 2 before an operation. Help exits 0. The viewer shows expected storage/filesystem errors in its status; unexpected callback errors keep Tk's traceback behavior.
 
-## Tradeoffs and verification limits
+## Tradeoffs and limits
 
-A flat package and functions keep the code explainable without project installation/PYTHONPATH or frameworks. SQLite gives local persistence without a server. One page bounds scope, and PR exclusion may yield fewer than 100 issues. Absence cannot establish closure/deletion, so reads can include later-closed issues and counts can exceed the latest import count.
-
-The client uses one context-managed Session, no token, no retries, and no redirect/pagination following. timeout=20 bounds connection/read waits, not total elapsed time. trust_env=False prevents implicit .netrc credentials but also ignores environment proxies/CA overrides; TLS verification remains enabled. Unauthenticated API rate limits still apply. No migration, UI, or background polling is included. Other Python versions and proxy-dependent networks have not been verified.
+- Functions and a flat package keep the connector explainable without frameworks, an ORM, or project installation.
+- SQLite provides persistence without a server. The composite key isolates repositories and makes repeated imports update existing rows.
+- One page bounds scope. PRs count toward the 100 API entries; retained older rows mean read counts can exceed import counts and include later-closed issues.
+- Public access needs no token but remains subject to rate limits. Disabling environment credentials also ignores proxies/CA overrides; TLS verification stays enabled. Timeout is not a total-runtime deadline.
+- The optional user-requested viewer reuses local reads. Its shared palette/themes keep presentation separate from storage; native window chrome/dialogs follow the OS. Synchronous reads can pause large/locked databases.
+- No migration or background polling is implemented. Other Python versions, proxy-dependent networks, native file-picker selection, and actual browser launching remain unverified. Final compact layout passed geometry tests; the final reopened preview was not visually inspected.

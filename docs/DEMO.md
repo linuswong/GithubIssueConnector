@@ -1,13 +1,13 @@
 # Demo script — target 1 minute 45 seconds
 
-The commands use real GitHub data and local SQLite. All PowerShell blocks were executed successfully using a fresh rehearsal database on October 6, 2026. Command execution took 2.116 seconds without narration; recording and sharing are still pending. Rehearse with a stopwatch and aim for 1:45, leaving 15 seconds before the assessment's two-minute limit. Narration timing has not been verified by a recording.
+The walkthrough uses real GitHub data and local SQLite. The original command blocks were executed with the clean verification interpreter and a fresh rehearsal database on October 6, 2026; command time was 2.116 seconds without narration. This guide now uses the standard .venv path from [README.md](../README.md) and includes the revised diagram narration. Recording, narration timing, and sharing remain unverified. Aim for 1:45, leaving 15 seconds before the two-minute limit.
 
 ## Before recording
 
-Open PowerShell in the project root. Use a large readable font, keep the window wide enough for the summary tables, and hide unrelated windows. Use the verified clean interpreter below, or the documented .venv interpreter after setup. Prepare these variables before starting the timer:
+Open PowerShell in the project root after setup. Use a large readable font, keep the window wide enough for summary tables, and hide unrelated windows. Prepare these variables before starting the timer:
 
 ```powershell
-$python = (Resolve-Path .\.venv\verification-m4\Scripts\python.exe).Path
+$python = (Resolve-Path .\.venv\Scripts\python.exe).Path
 $db = "./demo-m4.db"
 if (Test-Path $db) { throw "Choose a new demo filename before recording." }
 $checkDuplicates = @'
@@ -35,12 +35,28 @@ For another take, choose another unused demo-*.db filename; keep all generated d
 
 | Time | Action | Suggested narration |
 | --- | --- | --- |
-| 0:00–0:10 | Introduce the terminal/project | "This Python connector saves one page of open GitHub issues to SQLite. I can read that data locally in another process." |
-| 0:10–0:35 | Run A; show the summary and issue | "This is a real unauthenticated import from pallets/flask. It excludes pull requests and validates the whole page before committing. Import count is issues processed in this page, including updates." |
-| 0:35–0:50 | Run B | "This separate CLI process reads from SQLite. It never contacts GitHub. Read count is all saved rows for this repository." |
-| 0:50–1:20 | Run C; pause on duplicate_groups: [] | "I import again and read again. This SQL query finds no duplicate repository and issue-number groups. Equal counts alone would not prove that. Returned titles and URLs update through upsert." |
-| 1:20–1:35 | Run D; show JSON and exit 1 | "An extra slash is invalid input. This expected failure prints JSON on stderr and returns exit one before HTTP or database work." |
-| 1:35–1:45 | Briefly explain the key | "Issue numbers are local to each repository, so the primary key includes repository and issue number. SQLite enforces uniqueness while upsert updates saved records." |
+| 0:00–0:05 | Introduce the project | "This connector imports GitHub issues and keeps a local SQLite snapshot." |
+| 0:05–0:40 | Show [sysDes.mmd](../sysDes.mmd) as a rendered diagram | Use the architecture narration below, pointing to each path as you explain it. |
+| 0:40–1:00 | Run A; show the summary and issue | "This is a real unauthenticated import from pallets/flask. Import count is the number of issues processed in this page, including updates." |
+| 1:00–1:10 | Run B | "This separate process reads the saved issues locally. Read count includes all stored issues for this repository." |
+| 1:10–1:30 | Run C; pause on duplicate_groups: [] | "I import and read again. This SQL query finds no duplicate repository and issue-number groups. Equal counts alone would not prove that." |
+| 1:30–1:45 | Run D; show JSON and exit 1 | "An extra slash is invalid input. The command returns an error before HTTP or database work. Existing saved issues are preserved." |
+
+## Explaining sysDes.mmd
+
+Aim for about 35 seconds. This is a suggested allocation; the revised narration has not been rehearsed or timed in a recording.
+
+> "This diagram shows the two commands. main.py reads the operation, repository, and database path. Import requests one page from GitHub, removes pull requests, and validates the issues before saving them. SQLite uses repository and issue number together as the key, so repeated imports update records without duplicates. The batch commits together or rolls back if saving fails. Read retrieves saved issues directly from SQLite. Finally, the command prints JSON. Success exits with zero; expected operation errors exit with one."
+
+Point to these labels as you speak:
+
+1. `main.py` and argparse: the inputs are import/read, owner/name, and --db.
+2. `import_issues → fetch_issues → GitHub REST API → filtering/validation`: one API page becomes sorted issue records before any writes.
+3. `upsert_issues → transaction → database`: the composite key prevents duplicates; upsert inserts new records or updates title/URL; a failed batch rolls back its writes.
+4. `read_issues → read_saved_issues`: reads use SQLite only and return records in issue-number order.
+5. `_result → JSON output`: public functions build the result, and main.py prints it. Expected API/database errors pass through ConnectorError to that result.
+
+The diagram is simplified: repository validation happens before either operation's HTTP/database work, argparse syntax errors exit with two, and issues.db represents the default file (the actual path is configurable). If asked why the key has two columns, explain that issue number 1 can exist in several repositories. If asked what one page means, the API request explicitly uses page=1 and per_page=100; the website can display a different number per page. Previously saved rows absent from a later page are retained because that page cannot establish closure or deletion.
 
 ### A. Real import
 
@@ -89,10 +105,10 @@ Expected: failure JSON on stderr with code invalid_repository, repository=null, 
 ## Manual delivery checklist
 
 - [ ] Rehearse the narration with a stopwatch; record the real run with clear terminal output and audible explanation. Verify the finished video is under two minutes and shows all five required elements.
-- [x] Review tracked and untracked source/docs/tests, stage the intended submission, and inspect the staged diff for the requested local commit. Generated databases/environments/caches/credentials are excluded.
+- [x] Review and commit the initial connector locally as cd75207. Generated databases/environments/caches/credentials are excluded; later viewer/documentation changes receive a separate commit review.
 - [ ] Publish the reviewed local commit when ready. Check that the required source, tests, dependencies, README, and architecture are visible in the published repository.
 - [ ] Upload the video to Google Drive.
 - [ ] Grant the reviewer viewer access to the video and appropriate repository access. Test both links from a separate signed-out/private session or the intended reviewer context; verify the video actually plays and the source is visible. Access has not been checked by this milestone.
 - [ ] Reply only to the sender in the original email thread with the repository and demo links by October 7, 2026, 11:59 p.m. Pacific. Sending the reply remains your task.
 
-No video, upload, sharing change, repository publication, or email submission was performed by Codex.
+Codex has not recorded a video, uploaded it, changed sharing, published the repository, or sent the submission. These remain manual and unverified; see [BUILD_PLAN.md](BUILD_PLAN.md#remaining-delivery-work).

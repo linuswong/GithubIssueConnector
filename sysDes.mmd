@@ -1,0 +1,34 @@
+flowchart TD
+    Main["main.py: main()"]
+    Args["argparse reads operation, repo, and --db"]
+    Main --> Args
+
+    Args -->|import| Import["connector.py: import_issues()"]
+    Args -->|read| Read["connector.py: read_issues()"]
+
+    Import --> Fetch["github_client.py: fetch_issues()"]
+    Fetch -->|One GET request| API["GitHub REST API"]
+    API -->|Response| Extract["_extract_issues()"]
+    Extract --> Filter["Exclude pull requests"]
+    Filter --> Validate["Validate number, title, and URL"]
+    Validate --> URL["_is_browser_url()"]
+    URL --> Records["Sorted issue records"]
+    Records -->|Return to import_issues| Save["database.py: upsert_issues()"]
+
+    Save --> Transaction["BEGIN → create table → UPSERT"]
+    Transaction -->|Commit on success; rollback on failure| DB[("issues.db")]
+
+    Read --> Query["database.py: read_saved_issues()"]
+    DB -->|SELECT by repository; order by issue number| Query
+
+    Save -->|Save completes| Result["connector.py: _result()"]
+    Query -->|Saved issue records| Result
+
+    Fetch -.->|Expected API failure| Error["ConnectorError"]
+    Save -.->|Expected database failure| Error
+    Query -.->|Expected database failure| Error
+    Error -->|Caught by import_issues or read_issues| Result
+
+    Result --> Output["main(): serialize result with json.dumps()"]
+    Output --> Success["Success: stdout, exit 0"]
+    Output --> Failure["Operation failure: stderr, exit 1"]
