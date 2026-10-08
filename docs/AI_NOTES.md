@@ -8,7 +8,7 @@ The documentation cleanup consolidated repeated command logs. Historical results
 
 | Tool | Actual use |
 | --- | --- |
-| ChatGPT/Codex | Requirements, explanations, implementation, review, troubleshooting, documentation, and demo preparation |
+| ChatGPT/Codex and Cursor | Requirements, explanations, implementation, review, troubleshooting, documentation, and demo preparation |
 | PowerShell, rg, Git | File/source searches, shell commands, status/diff/history/configuration, ignore checks, staging, and local commits |
 | Python venv and pip | Isolated setup, documented dependency installation, imports, and version/consistency checks |
 | requests | Public GitHub exploration/imports; real response preparation/decoding with mocked transport in tests |
